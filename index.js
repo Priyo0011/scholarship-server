@@ -110,11 +110,17 @@ async function run() {
       const result = await usersCollection.findOne({ email })
       res.send(result)
     })
-    // Get all universities from db
+    // Get all university from db
     app.get("/university", async (req, res) => {
       const result = await universityCollection.find().toArray();
       res.send(result);
     });
+     // Save a university data in db
+     app.post('/scholarship', async (req, res) => {
+      const scholarshipData = req.body
+      const result = await universityCollection.insertOne(scholarshipData)
+      res.send(result)
+    })
     // Get all users from db
     app.get("/users", async (req, res) => {
       const result = await usersCollection.find().toArray();
