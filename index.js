@@ -127,6 +127,13 @@ async function run() {
       res.send(result);
     });
 
+// Get all scholarships from db
+    app.get("/manage-scholarships/:email", async (req, res) => {
+      const email = req.params.email
+      let query = { 'host.email': email }
+      const result = await universityCollection.find(query).toArray();
+      res.send(result);
+    });
     //update a user role
     app.patch('/users/update/:email', async (req, res) => {
       const email = req.params.email
