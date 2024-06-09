@@ -34,6 +34,7 @@ async function run() {
     const usersCollection = client.db("scholarship").collection("users");
     const paymentCollection = client.db("scholarship").collection("payment");
     const applyCollection = client.db("scholarship").collection("applicant");
+    const reviewsCollection = client.db("scholarship").collection("review");
 
     app.post("/jwt", async (req, res) => {
       const user = req.body;
@@ -117,6 +118,12 @@ async function run() {
     app.post("/scholarship", async (req, res) => {
       const scholarshipData = req.body;
       const result = await universityCollection.insertOne(scholarshipData);
+      res.send(result);
+    });
+    // Save a review data in db
+    app.post("/review", async (req, res) => {
+      const reviewData = req.body;
+      const result = await universityCollection.insertOne(reviewData);
       res.send(result);
     });
     // Save a apply data in db
