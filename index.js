@@ -6,6 +6,8 @@ const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const jwt = require("jsonwebtoken");
 const port = process.env.PORT || 9000;
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
+
 
 // middleware
 const corsOptions = {
@@ -15,24 +17,6 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 app.use(express.json());
-app.use(cookieParser());
-
-// Verify Token Middleware
-const verifyToken = async (req, res, next) => {
-  const token = req.cookies?.token;
-  console.log(token);
-  if (!token) {
-    return res.status(401).send({ message: "unauthorized access" });
-  }
-  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-    if (err) {
-      console.log(err);
-      return res.status(401).send({ message: "unauthorized access" });
-    }
-    req.user = decoded;
-    next();
-  });
-};
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.32bwvbv.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
@@ -47,105 +31,156 @@ async function run() {
   try {
     const universityCollection = client.db("scholarship").collection("university");
     const usersCollection = client.db("scholarship").collection("users");
+    const paymentCollection = client.db("scholarship").collection("payment");
+    const applyCollection = client.db("scholarship").collection("applicant");
+
     // auth related api
     app.post("/jwt", async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
         expiresIn: "365d",
       });
-      res
-        .cookie("token", token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-        })
-        .send({ success: true });
-    });
-    // Logout
-    app.get("/logout", async (req, res) => {
-      try {
-        res
-          .clearCookie("token", {
-            maxAge: 0,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-          })
-          .send({ success: true });
-        console.log("Logout successful");
-      } catch (err) {
-        res.status(500).send(err);
-      }
+      res.send({ token });
     });
 
+    // Verify Token Middleware
+    const verifyToken = (req, res, next) => {
+      if (!req.headers.authorization) {
+        return res.status(401).send({ message: "unauthorized access" });
+      }
+      const token = req.headers.authorization.split(" ")[1];
+      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+          return res.status(401).send({ message: "unauthorized access" });
+        }
+        req.decoded = decoded;
+        next();
+      });
+    };
+
     // save a user data in db
-    app.put('/user', async (req, res) => {
-      const user = req.body
-      const query = { email: user?.email }
-      const isExist = await usersCollection.findOne(query)
+    app.put("/user", async (req, res) => {
+      const user = req.body;
+      const query = { email: user?.email };
+      const isExist = await usersCollection.findOne(query);
       if (isExist) {
-        if (user.status === 'Requested') {
+        if (user.status === "Requested") {
           const result = await usersCollection.updateOne(query, {
             $set: { status: user?.status },
-          })
-          return res.send(result)
+          });
+          return res.send(result);
         } else {
-          return res.send(isExist)
+          return res.send(isExist);
         }
       }
 
-      const options = { upsert: true }
+      const options = { upsert: true };
       const updateDoc = {
         $set: {
           ...user,
           timestamp: Date.now(),
         },
-      }
-      const result = await usersCollection.updateOne(query, updateDoc, options)
-      res.send(result)
-    })
+      };
+      const result = await usersCollection.updateOne(query, updateDoc, options);
+      res.send(result);
+    });
 
     // get a user info by email from db
-    app.get('/user/:email', async (req, res) => {
-      const email = req.params.email
-      const result = await usersCollection.findOne({ email })
-      res.send(result)
-    })
+    app.get("/user/:email", async (req, res) => {
+      const email = req.params.email;
+      const result = await usersCollection.findOne({ email });
+      res.send(result);
+    });
     // Get all university from db
     app.get("/university", async (req, res) => {
       const result = await universityCollection.find().toArray();
       res.send(result);
     });
-     // Save a university data in db
-     app.post('/scholarship', async (req, res) => {
-      const scholarshipData = req.body
-      const result = await universityCollection.insertOne(scholarshipData)
+    // Save a university data in db
+    app.post("/scholarship", async (req, res) => {
+      const scholarshipData = req.body;
+      const result = await universityCollection.insertOne(scholarshipData);
+      res.send(result);
+    });
+    // Save a apply data in db
+    app.post("/apply", async (req, res) => {
+      const applyData = req.body;
+      const result = await applyCollection.insertOne(applyData);
+      res.send(result);
+    });
+    // get all apply for a user
+    app.get('/my-apply/:email', async (req, res) => {
+      const email = req.params.email
+      const query = { 'user.email': email }
+      const result = await paymentCollection.find(query).toArray()
       res.send(result)
     })
+    // delete a booking
+    app.delete('/apply/:id', async (req, res) => {
+      const id = req.params.id
+      const query = { _id: new ObjectId(id) }
+      const result = await paymentCollection.deleteOne(query)
+      res.send(result)
+    })
+    // Save a payments data in db
+    app.post("/payments", async (req, res) => {
+      const paymentData = req.body;
+      const result = await paymentCollection.insertOne(paymentData);
+      res.send(result);
+    });
     // Get all users from db
     app.get("/users", async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
     });
+    // Get all payment from db
+    app.get("/payment", async (req, res) => {
+      const result = await paymentCollection.find().toArray();
+      res.send(result);
+    });
 
-// Get all scholarships from db
+    // Get all scholarships from db
     app.get("/manage-scholarships/:email", async (req, res) => {
-      const email = req.params.email
-      let query = { 'host.email': email }
+      const email = req.params.email;
+      let query = { "host.email": email };
       const result = await universityCollection.find(query).toArray();
       res.send(result);
     });
+
+       // create-payment-intent
+       app.post('/create-payment-intent', async (req, res) => {
+        const price = req.body.price
+        const priceInCent = parseFloat(price) * 100
+        if (!price || priceInCent < 1) return
+        const { client_secret } = await stripe.paymentIntents.create({
+          amount: priceInCent,
+          currency: 'usd',
+          automatic_payment_methods: {
+            enabled: true,
+          },
+        })
+        res.send({ clientSecret: client_secret })
+      })
+
+    // delete a room
+    app.delete("/scholarship/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await universityCollection.deleteOne(query);
+      res.send(result);
+    });
     //update a user role
-    app.patch('/users/update/:email', async (req, res) => {
-      const email = req.params.email
-      const user = req.body
-      const query = { email }
+    app.patch("/users/update/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = req.body;
+      const query = { email };
       const updateDoc = {
         $set: { ...user, timestamp: Date.now() },
-      }
-      const result = await usersCollection.updateOne(query, updateDoc)
-      res.send(result)
-    })
-    //delete  a user 
+      };
+      const result = await usersCollection.updateOne(query, updateDoc);
+      res.send(result);
+    });
+    //delete  a user
     app.delete("/users/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
