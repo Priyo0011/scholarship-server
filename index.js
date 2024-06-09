@@ -1,13 +1,11 @@
 const express = require("express");
 const app = express();
-require("dotenv").config();
 const cors = require("cors");
-const cookieParser = require("cookie-parser");
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const jwt = require("jsonwebtoken");
-const port = process.env.PORT || 9000;
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
-
+require("dotenv").config();
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const port = process.env.PORT || 5000;
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // middleware
 const corsOptions = {
@@ -29,35 +27,48 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    const universityCollection = client.db("scholarship").collection("university");
+    await client.connect();
+    const universityCollection = client
+      .db("scholarship")
+      .collection("university");
     const usersCollection = client.db("scholarship").collection("users");
     const paymentCollection = client.db("scholarship").collection("payment");
     const applyCollection = client.db("scholarship").collection("applicant");
 
-    // auth related api
     app.post("/jwt", async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-        expiresIn: "365d",
+        expiresIn: "24h",
       });
       res.send({ token });
     });
 
     // Verify Token Middleware
-    const verifyToken = (req, res, next) => {
+    const verifyToken = async (req, res, next) => {
       if (!req.headers.authorization) {
         return res.status(401).send({ message: "unauthorized access" });
       }
       const token = req.headers.authorization.split(" ")[1];
       jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
         if (err) {
+          console.log(err);
           return res.status(401).send({ message: "unauthorized access" });
         }
-        req.decoded = decoded;
+        req.user = decoded;
         next();
       });
     };
 
+    const verifyAdmin = async (req, res, next) => {
+      const user = req.user;
+      const query = { email: user?.email };
+      const result = await usersCollection.findOne(query);
+      console.log(result?.role);
+      if (!result || result?.role !== "admin")
+        return res.status(401).send({ message: "unauthorized access!!" });
+
+      next();
+    };
     // save a user data in db
     app.put("/user", async (req, res) => {
       const user = req.body;
@@ -85,6 +96,12 @@ async function run() {
       res.send(result);
     });
 
+    // Get all users from db
+    app.get("/users", verifyToken,verifyAdmin, async (req, res) => {
+      const result = await usersCollection.find().toArray();
+      res.send(result);
+    });
+
     // get a user info by email from db
     app.get("/user/:email", async (req, res) => {
       const email = req.params.email;
@@ -109,30 +126,26 @@ async function run() {
       res.send(result);
     });
     // get all apply for a user
-    app.get('/my-apply/:email', async (req, res) => {
-      const email = req.params.email
-      const query = { 'user.email': email }
-      const result = await paymentCollection.find(query).toArray()
-      res.send(result)
-    })
+    app.get("/my-apply/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { "user.email": email };
+      const result = await paymentCollection.find(query).toArray();
+      res.send(result);
+    });
     // delete a booking
-    app.delete('/apply/:id', async (req, res) => {
-      const id = req.params.id
-      const query = { _id: new ObjectId(id) }
-      const result = await paymentCollection.deleteOne(query)
-      res.send(result)
-    })
+    app.delete("/apply/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await paymentCollection.deleteOne(query);
+      res.send(result);
+    });
     // Save a payments data in db
     app.post("/payments", async (req, res) => {
       const paymentData = req.body;
       const result = await paymentCollection.insertOne(paymentData);
       res.send(result);
     });
-    // Get all users from db
-    app.get("/users", async (req, res) => {
-      const result = await usersCollection.find().toArray();
-      res.send(result);
-    });
+
     // Get all payment from db
     app.get("/payment", async (req, res) => {
       const result = await paymentCollection.find().toArray();
@@ -147,20 +160,20 @@ async function run() {
       res.send(result);
     });
 
-       // create-payment-intent
-       app.post('/create-payment-intent', async (req, res) => {
-        const price = req.body.price
-        const priceInCent = parseFloat(price) * 100
-        if (!price || priceInCent < 1) return
-        const { client_secret } = await stripe.paymentIntents.create({
-          amount: priceInCent,
-          currency: 'usd',
-          automatic_payment_methods: {
-            enabled: true,
-          },
-        })
-        res.send({ clientSecret: client_secret })
-      })
+    // create-payment-intent
+    app.post("/create-payment-intent", async (req, res) => {
+      const price = req.body.price;
+      const priceInCent = parseFloat(price) * 100;
+      if (!price || priceInCent < 1) return;
+      const { client_secret } = await stripe.paymentIntents.create({
+        amount: priceInCent,
+        currency: "usd",
+        automatic_payment_methods: {
+          enabled: true,
+        },
+      });
+      res.send({ clientSecret: client_secret });
+    });
 
     // delete a room
     app.delete("/scholarship/:id", async (req, res) => {
