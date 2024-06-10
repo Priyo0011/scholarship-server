@@ -102,6 +102,11 @@ async function run() {
       const result = await usersCollection.find().toArray();
       res.send(result);
     });
+    // Get all reviews from db
+    app.get("/reviews",  async (req, res) => {
+      const result = await reviewsCollection.find().toArray();
+      res.send(result);
+    });
 
     // get a user info by email from db
     app.get("/user/:email", async (req, res) => {
@@ -123,7 +128,7 @@ async function run() {
     // Save a review data in db
     app.post("/review", async (req, res) => {
       const reviewData = req.body;
-      const result = await universityCollection.insertOne(reviewData);
+      const result = await reviewsCollection.insertOne(reviewData);
       res.send(result);
     });
     // Save a apply data in db
@@ -139,11 +144,25 @@ async function run() {
       const result = await paymentCollection.find(query).toArray();
       res.send(result);
     });
-    // delete a booking
+    // get all apply for a user
+    app.get("/my-reviews/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { "review_user.email": email };
+      const result = await reviewsCollection.find(query).toArray();
+      res.send(result);
+    });
+    // delete a apply
     app.delete("/apply/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await paymentCollection.deleteOne(query);
+      res.send(result);
+    });
+    // delete a reviews
+    app.delete("/reviews/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await reviewsCollection.deleteOne(query);
       res.send(result);
     });
     // Save a payments data in db
