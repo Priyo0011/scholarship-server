@@ -107,6 +107,17 @@ async function run() {
       const result = await reviewsCollection.find().toArray();
       res.send(result);
     });
+    // update scholarship
+    app.put('/scholarship/update/:id', async (req, res) => {
+      const id = req.params.id
+      const scholarshipData = req.body
+      const query = { _id: new ObjectId(id) }
+      const updateDoc = {
+        $set: scholarshipData,
+      }
+      const result = await universityCollection.updateOne(query, updateDoc)
+      res.send(result)
+    })
 
     // get a user info by email from db
     app.get("/user/:email", async (req, res) => {
@@ -201,7 +212,7 @@ async function run() {
       res.send({ clientSecret: client_secret });
     });
 
-    // delete a room
+    // delete a 
     app.delete("/scholarship/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
